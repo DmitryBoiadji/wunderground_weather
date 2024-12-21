@@ -1,0 +1,16 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Wunderground Weather",
+        "description": "Enter the Station ID to fetch weather data.",
+        "data": {
+          "station_id": "Station ID"
+        }
+      }
+    },
+    "error": {
+      "invalid_station_id": "Invalid Station ID"
+    }
+  }
+}

@@ -44,8 +44,8 @@ def fetch_weather_data(station_id):
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up the Wunderground Weather platform."""
-    station_id = config_entry.data.get("station_id")
+    """Set up the Wunderground Weather platform from a config entry."""
+    station_id = config_entry.data["station_id"]
     async_add_entities([WundergroundWeather(station_id)])
 
 
@@ -72,7 +72,7 @@ class WundergroundWeather(WeatherEntity):
 
     # @property
     # def condition(self):
-    #     return "Clear"
+    #     return "Clear"  
 
     @property
     def temperature_unit(self):
