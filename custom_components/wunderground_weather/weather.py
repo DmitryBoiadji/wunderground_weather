@@ -9,40 +9,43 @@ _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "wunderground_weather"
 
-def fetch_weather_data(station_id):
+async def fetch_weather_data(session, station_id):
+    """Fetch weather data asynchronously."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.9",
     }
     url = f"https://www.wunderground.com/dashboard/pws/{station_id}"
-    async with session.get(url, headers=headers) as response:
+    try:
+        
+        async with session.get(url, headers=headers) as response:
             response.raise_for_status()
             html = await response.text()
-            
-    soup = BBeautifulSoup(html, "html.parser")
-    script_tag = soup.find("script", {"id": "app-root-state", "type": "application/json"})
 
-    if not script_tag:
-        _LOGGER.error("Weather data script tag not found!")
-        return None
+        soup = BeautifulSoup(html, "html.parser")
+        script_tag = soup.find("script", {"id": "app-root-state", "type": "application/json"})
 
-    json_data = json.loads(script_tag.string.replace("&q;", "\""))
-    api_key = json_data.get("process.env", {}).get("SUN_API_KEY")
+        if not script_tag:
+            raise ValueError("Weather data script tag not found!")
 
-    if not api_key:
-        _LOGGER.error("API key not found in data!")
-        return None
+        json_data = json.loads(script_tag.string.replace("&q;", "\""))
+        api_key = json_data.get("process.env", {}).get("SUN_API_KEY")
 
-    api_url = (
-        f"https://api.weather.com/v2/pws/observations/current?"
-        f"apiKey={api_key}&stationId={station_id}&numericPrecision=decimal&format=json&units=m"
-    )
-    response = requests.get(api_url)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        _LOGGER.error("Error fetching weather data from API")
-        return None
+        if not api_key:
+            raise ValueError("API key not found in data!")
+
+        
+        api_url = (
+            f"https://api.weather.com/v2/pws/observations/current?"
+            f"apiKey={api_key}&stationId={station_id}&numericPrecision=decimal&format=json&units=m"
+        )
+        async with session.get(api_url) as api_response:
+            api_response.raise_for_status()
+            return await api_response.json()
+
+    except Exception as e:
+        return {"error": str(e)}
+
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
