@@ -17,7 +17,7 @@ async def fetch_weather_data(session, station_id):
     }
     url = f"https://www.wunderground.com/dashboard/pws/{station_id}"
     try:
-        
+
         async with session.get(url, headers=headers) as response:
             response.raise_for_status()
             html = await response.text()
@@ -55,9 +55,11 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     async_add_entities([WundergroundWeather(station_id, session)])
 
 class WundergroundWeather(WeatherEntity):
-    def __init__(self, station_id):
+   def __init__(self, station_id, session):
+        """Initialize the weather entity."""
         self._station_id = station_id
-        self._data = None
+        self._session = session
+        self._data = {}
 
     @property
     def name(self):
@@ -84,6 +86,6 @@ class WundergroundWeather(WeatherEntity):
         return TEMP_CELSIUS
 
     async def async_update(self):
-        _LOGGER.info(f"Fetching weather data for station: {self._station_id}")
-        self._data = await fetch_weather_data(self._session, self._station_id)
-
+        """Fetch data from the API."""
+        _LOGGER.info(f"Updating weather data for station {self._station_id}")
+        self._data = await fetch_weather_data(self._session, self._station_id) or {}
