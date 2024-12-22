@@ -4,11 +4,13 @@ import aiohttp
 from bs4 import BeautifulSoup
 from html import unescape
 import json
+import  html
 import logging
 
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "wunderground_weather"
+
 
 
 async def fetch_weather_data(session, station_id):
@@ -21,22 +23,21 @@ async def fetch_weather_data(session, station_id):
     try:
         async with session.get(url, headers=headers) as response:
             response.raise_for_status()
-            html = await response.text()
+            html_content = await response.text()
 
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html_content, "html.parser")
         script_tag = soup.find("script", {"id": "app-root-state", "type": "application/json"})
 
         if not script_tag or not script_tag.string.strip():
             raise ValueError("Script tag content is empty or missing!")
 
-        script_content = script_tag.string
-        _LOGGER.debug(f"Script tag content (raw): {script_content[:500]}")  # Log first 500 characters
+        # Decode HTML entities like &q; into their original characters
+        script_content = html.unescape(script_tag.string)
 
-        # Replace &q; with actual double quotes
-        cleaned_content = script_content.replace("&q;", '"')
+        _LOGGER.debug(f"Script tag content (decoded): {script_content[:500]}")  # Log first 500 characters
 
         try:
-            json_data = json.loads(cleaned_content)
+            json_data = json.loads(script_content)
         except json.JSONDecodeError as e:
             _LOGGER.error(f"Error decoding JSON: {e}")
             raise ValueError("Failed to parse weather data from script tag!")
@@ -58,8 +59,6 @@ async def fetch_weather_data(session, station_id):
     except Exception as e:
         _LOGGER.error(f"Error fetching weather data: {e}")
         return {"error": str(e)}
-
-
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the Wunderground Weather platform from a config entry."""
     station_id = config_entry.data["station_id"]
