@@ -10,7 +10,6 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "wunderground_weather"
 
 
-
 async def fetch_weather_data(session, station_id):
     """Fetch weather data asynchronously."""
     headers = {
@@ -104,12 +103,10 @@ class WundergroundWeather(WeatherEntity):
         _LOGGER.debug(f"Fetching weather data for station {self._station_id}")
 
         data = await fetch_weather_data(self._session, self._station_id)
-        _LOGGER.debug(f"Script tag content (decoded): {data[:500]}")
-        
+        _LOGGER.debug(f"Script tag content (decoded): {str(data)}")
 
         if not data:
             _LOGGER.warning(f"No data fetched for station {self._station_id}")
             self._data = {}
         else:
-            self._data = data
-
+            self._data = data.get('observations')[0]
