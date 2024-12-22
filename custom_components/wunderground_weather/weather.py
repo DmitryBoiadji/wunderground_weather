@@ -71,32 +71,81 @@ class WundergroundWeather(WeatherEntity):
         self._session = session
         self._data = {}
 
+    # Example
+    # apparent_temperature: 12.0
+    # cloud_coverage: 0
+    # dew_point: 5.0
+    # humidity: 76
+    # precipitation_unit: mm
+    # pressure: 1019
+    # pressure_unit: hPa
+    # temperature: 14.2
+    # temperature_unit: °C
+    # uv_index: 2
+    # visibility: 10
+    # visibility_unit: km
+    # wind_bearing: 260
+    # wind_gust_speed: 51.56
+    # wind_speed: 35.17
+    # wind_speed_unit: km/h
+
+    # data:
+    # {
+    #   'stationID': 'ICHIIN35',
+    #   'obsTimeUtc': '2024-12-22T12:04:08Z',
+    #   'obsTimeLocal': '2024-12-22 14:04:08',
+    #   'neighborhood': 'Chișinău',
+    #   'softwareType': 'EasyWeatherPro_V5.1.7',
+    #   'country': 'MD',
+    #   'solarRadiation': 53.4,
+    #   'lon': 28.853941,
+    #   'realtimeFrequency': None,
+    #   'epoch': 1734869048,
+    #   'lat': 47.006611,
+    #   'uv': 0.0,
+    #   'winddir': 279,
+    #   'humidity': 86.0,
+    #   'qcStatus': 1,
+    #   'metric': {
+    #     'temp': -0.6,
+    #     'heatIndex': -0.6,
+    #     'dewpt': -2.6,
+    #     'windChill': -2.3,
+    #     'windSpeed': 5.0,
+    #     'windGust': 5.8,
+    #     'pressure': 1001.19,
+    #     'precipRate': 0.0,
+    #     'precipTotal': 0.0,
+    #     'elev': 20.4
+    #   }
+    # }
+
     @property
     def name(self):
         return f"Wunderground Weather {self._station_id}"
 
-    @property
-    def temperature(self):
-        if "error" in self._data:
-            _LOGGER.error(f"Error in weather data: {self._data['error']}")
-            return None
-        return self._data.get("imperial", {}).get("tempAvg")
+    # @property
+    # def temperature(self):
+    #     if "error" in self._data:
+    #         _LOGGER.error(f"Error in weather data: {self._data['error']}")
+    #         return None
+    #     return self._data.get("imperial", {}).get("tempAvg")
 
     @property
     def humidity(self):
-        return self._data.get("humidityAvg")
+        return self._data.get("humidity")
 
-    @property
-    def wind_speed(self):
-        return self._data.get("imperial", {}).get("windspeedAvg")
+    # @property
+    # def wind_speed(self):
+    #     return self._data.get("imperial", {}).get("windspeedAvg")
 
-    @property
-    def condition(self):
-        return "Clear"
+    # @property
+    # def condition(self):
+    #     return "Clear"
 
-    @property
-    def temperature_unit(self):
-        return TEMP_CELSIUS
+    # @property
+    # def temperature_unit(self):
+    #     return TEMP_CELSIUS
 
     async def async_update(self):
         """Fetch data from the API."""
@@ -110,3 +159,6 @@ class WundergroundWeather(WeatherEntity):
             self._data = {}
         else:
             self._data = data.get('observations')[0]
+            _LOGGER.debug(f"DATA : {str(self._data)}")
+            _LOGGER.debug(f"TEST humidity : {str(self._data.get('humidity'))}")
+
