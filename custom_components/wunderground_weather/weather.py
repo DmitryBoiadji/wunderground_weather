@@ -129,13 +129,6 @@ class WundergroundWeather(WeatherEntity):
     def name(self):
         return f"Wunderground Weather {self._station_id}"
 
-    # @property
-    # def temperature(self):
-    #     if "error" in self._data:
-    #         _LOGGER.error(f"Error in weather data: {self._data['error']}")
-    #         return None
-    #     return self._data.get("imperial", {}).get("tempAvg")
-
     @property
     def humidity(self):
         return self._data.get("humidity")
@@ -148,13 +141,33 @@ class WundergroundWeather(WeatherEntity):
     def native_temperature_unit(self):
         return TEMP_CELSIUS
 
-    # @property
-    # def wind_speed(self):
-    #     return self._data.get("imperial", {}).get("windspeedAvg")
+    @property
+    def native_wind_speed(self):
+        return self._data.get("metric", {}).get("windSpeed")
+
+    @property
+    def native_wind_gust_speed(self):
+        return self._data.get("metric", {}).get("windGust")
+
+    @property
+    def native_wind_speed_unit(self):
+        return "km/h"
+
+    @property
+    def native_dew_point(self):
+        return self._data.get("metric", {}).get("dew_point")
+
+    @property
+    def wind_bearing(self):
+        return self._data.get("winddir", {})
 
     @property
     def condition(self):
         return map_condition(self._data)
+
+    @property
+    def uv_index(self):
+        return self._data.get("uv", {})
 
     async def async_update(self):
         """Fetch data from the API."""
