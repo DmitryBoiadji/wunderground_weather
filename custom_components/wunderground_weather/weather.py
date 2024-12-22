@@ -121,6 +121,11 @@ class WundergroundWeather(WeatherEntity):
     # }
 
     @property
+    def unique_id(self):
+        """Return a unique ID for this entity."""
+        return f"wunderground_weather_{self._station_id}"
+
+    @property
     def name(self):
         return f"Wunderground Weather {self._station_id}"
 
@@ -135,17 +140,21 @@ class WundergroundWeather(WeatherEntity):
     def humidity(self):
         return self._data.get("humidity")
 
+    @property
+    def native_temperature(self):
+        return self._data.get("metric", {}).get("temp")
+
+    @property
+    def native_temperature_unit(self):
+        return TEMP_CELSIUS
+
     # @property
     # def wind_speed(self):
     #     return self._data.get("imperial", {}).get("windspeedAvg")
 
-    # @property
-    # def condition(self):
-    #     return "Clear"
-
-    # @property
-    # def temperature_unit(self):
-    #     return TEMP_CELSIUS
+    @property
+    def condition(self):
+        return map_condition(self._data)
 
     async def async_update(self):
         """Fetch data from the API."""
@@ -162,3 +171,38 @@ class WundergroundWeather(WeatherEntity):
             _LOGGER.debug(f"DATA : {str(self._data)}")
             _LOGGER.debug(f"TEST humidity : {str(self._data.get('humidity'))}")
 
+
+def map_condition(data):
+    """Map weather data to Home Assistant conditions."""
+    metric = data.get("metric", {})
+    temp = metric.get("temp", 0)
+    humidity = data.get("humidity", 0)
+    wind_speed = metric.get("windSpeed", 0)
+    precip_rate = metric.get("precipRate", 0)
+    solar_radiation = data.get("solarRadiation", 0)
+    uv_index = data.get("uv", 0)
+    obs_time = data.get("obsTimeLocal", "")
+
+    is_day = "06:00" <= obs_time.split(" ")[1] <= "18:00"
+
+    if precip_rate > 0.0:
+        if temp <= 0:
+            return "snowy-rainy" if precip_rate > 0.1 else "snowy"
+        return "pouring" if precip_rate > 5.0 else "rainy"
+
+    if solar_radiation > 50 and is_day:
+        return "sunny" if humidity < 70 else "partlycloudy"
+
+    if humidity >= 95 and solar_radiation < 10:
+        return "fog"
+
+    if wind_speed > 20:
+        return "windy-variant" if solar_radiation < 50 else "windy"
+
+    if solar_radiation < 10 and not is_day:
+        return "clear-night"
+
+    if solar_radiation < 50:
+        return "cloudy"
+
+    return "exceptional"
