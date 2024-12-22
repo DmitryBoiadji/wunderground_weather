@@ -29,10 +29,14 @@ async def fetch_weather_data(session, station_id):
         if not script_tag or not script_tag.string.strip():
             raise ValueError("Script tag content is empty or missing!")
 
-        _LOGGER.debug(f"Script tag content: {script_tag.string[:500]}")  # Log first 500 characters
+        script_content = script_tag.string
+        _LOGGER.debug(f"Script tag content (raw): {script_content[:500]}")  # Log first 500 characters
+
+        # Replace &q; with actual double quotes
+        cleaned_content = script_content.replace("&q;", '"')
 
         try:
-            json_data = json.loads(script_tag.string.replace("'", '"'))
+            json_data = json.loads(cleaned_content)
         except json.JSONDecodeError as e:
             _LOGGER.error(f"Error decoding JSON: {e}")
             raise ValueError("Failed to parse weather data from script tag!")
@@ -54,7 +58,6 @@ async def fetch_weather_data(session, station_id):
     except Exception as e:
         _LOGGER.error(f"Error fetching weather data: {e}")
         return {"error": str(e)}
-
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
