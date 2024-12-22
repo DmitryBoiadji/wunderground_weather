@@ -2,6 +2,7 @@ from homeassistant.components.weather import WeatherEntity
 from homeassistant.const import TEMP_CELSIUS
 import aiohttp
 from bs4 import BeautifulSoup
+from html import unescape
 import json
 import logging
 
@@ -18,7 +19,6 @@ async def fetch_weather_data(session, station_id):
     }
     url = f"https://www.wunderground.com/dashboard/pws/{station_id}"
     try:
-
         async with session.get(url, headers=headers) as response:
             response.raise_for_status()
             html = await response.text()
@@ -29,7 +29,7 @@ async def fetch_weather_data(session, station_id):
         if not script_tag:
             raise ValueError("Weather data script tag not found!")
 
-        json_data = json.loads(script_tag.string.replace("&q;", "\""))
+        json_data = json.loads(unescape(script_tag.string))
         api_key = json_data.get("process.env", {}).get("SUN_API_KEY")
 
         if not api_key:
@@ -44,14 +44,15 @@ async def fetch_weather_data(session, station_id):
             return await api_response.json()
 
     except Exception as e:
-        return {"error": str(e)}
+        _LOGGER.error(f"Error fetching weather data: {e}")
+        return None
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the Wunderground Weather platform from a config entry."""
     station_id = config_entry.data["station_id"]
-    session = aiohttp.ClientSession()
-    async_add_entities([WundergroundWeather(station_id, session)])
+    session = hass.helpers.aiohttp_client.async_get_clientsession()
+    async_add_entities([WundergroundWeather(station_id, session)], True)
 
 
 class WundergroundWeather(WeatherEntity):
@@ -62,12 +63,14 @@ class WundergroundWeather(WeatherEntity):
         self._data = {}
 
     @property
-
     def name(self):
         return f"Wunderground Weather {self._station_id}"
 
     @property
     def temperature(self):
+        if "error" in self._data:
+            _LOGGER.error(f"Error in weather data: {self._data['error']}")
+            return None
         return self._data.get("imperial", {}).get("tempAvg")
 
     @property
@@ -78,9 +81,9 @@ class WundergroundWeather(WeatherEntity):
     def wind_speed(self):
         return self._data.get("imperial", {}).get("windspeedAvg")
 
-    # @property
-    # def condition(self):
-    #     return "Clear"  
+    @property
+    def condition(self):
+        return "Clear"
 
     @property
     def temperature_unit(self):
@@ -88,5 +91,10 @@ class WundergroundWeather(WeatherEntity):
 
     async def async_update(self):
         """Fetch data from the API."""
-        _LOGGER.info(f"Updating weather data for station {self._station_id}")
-        self._data = await fetch_weather_data(self._session, self._station_id) or {}
+        _LOGGER.debug(f"Fetching weather data for station {self._station_id}")
+        data = await fetch_weather_data(self._session, self._station_id)
+        if not data:
+            _LOGGER.warning(f"No data fetched for station {self._station_id}")
+            self._data = {}
+        else:
+            self._data = data
