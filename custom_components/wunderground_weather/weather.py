@@ -1,6 +1,6 @@
 from homeassistant.components.weather import WeatherEntity
 from homeassistant.const import TEMP_CELSIUS
-import requests
+import aiohttp
 from bs4 import BeautifulSoup
 import json
 import logging
@@ -15,9 +15,11 @@ def fetch_weather_data(station_id):
         "Accept-Language": "en-US,en;q=0.9",
     }
     url = f"https://www.wunderground.com/dashboard/pws/{station_id}"
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
+    async with session.get(url, headers=headers) as response:
+            response.raise_for_status()
+            html = await response.text()
+            
+    soup = BBeautifulSoup(html, "html.parser")
     script_tag = soup.find("script", {"id": "app-root-state", "type": "application/json"})
 
     if not script_tag:
@@ -46,8 +48,8 @@ def fetch_weather_data(station_id):
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the Wunderground Weather platform from a config entry."""
     station_id = config_entry.data["station_id"]
-    async_add_entities([WundergroundWeather(station_id)])
-
+    session = aiohttp.ClientSession()
+    async_add_entities([WundergroundWeather(station_id, session)])
 
 class WundergroundWeather(WeatherEntity):
     def __init__(self, station_id):
@@ -80,5 +82,5 @@ class WundergroundWeather(WeatherEntity):
 
     async def async_update(self):
         _LOGGER.info(f"Fetching weather data for station: {self._station_id}")
-        self._data = fetch_weather_data(self._station_id)
+        self._data = await fetch_weather_data(self._session, self._station_id)
 
