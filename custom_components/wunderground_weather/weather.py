@@ -9,6 +9,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "wunderground_weather"
 
+
 async def fetch_weather_data(session, station_id):
     """Fetch weather data asynchronously."""
     headers = {
@@ -34,7 +35,6 @@ async def fetch_weather_data(session, station_id):
         if not api_key:
             raise ValueError("API key not found in data!")
 
-        
         api_url = (
             f"https://api.weather.com/v2/pws/observations/current?"
             f"apiKey={api_key}&stationId={station_id}&numericPrecision=decimal&format=json&units=m"
@@ -47,21 +47,22 @@ async def fetch_weather_data(session, station_id):
         return {"error": str(e)}
 
 
-
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the Wunderground Weather platform from a config entry."""
     station_id = config_entry.data["station_id"]
     session = aiohttp.ClientSession()
     async_add_entities([WundergroundWeather(station_id, session)])
 
+
 class WundergroundWeather(WeatherEntity):
-   def __init__(self, station_id, session):
+    def __init__(self, station_id, session):
         """Initialize the weather entity."""
         self._station_id = station_id
         self._session = session
         self._data = {}
 
     @property
+
     def name(self):
         return f"Wunderground Weather {self._station_id}"
 
