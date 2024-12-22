@@ -31,8 +31,7 @@ async def fetch_weather_data(session, station_id):
         if not script_tag or not script_tag.string.strip():
             raise ValueError("Script tag content is empty or missing!")
 
-        # Decode HTML entities like &q; into their original characters
-        script_content = html.unescape(script_tag.string)
+        script_content = script_tag.string.replace("&q;", "\"")
 
         _LOGGER.debug(f"Script tag content (decoded): {script_content[:500]}")  # Log first 500 characters
 
