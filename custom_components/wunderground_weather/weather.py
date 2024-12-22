@@ -26,11 +26,19 @@ async def fetch_weather_data(session, station_id):
         soup = BeautifulSoup(html, "html.parser")
         script_tag = soup.find("script", {"id": "app-root-state", "type": "application/json"})
 
-        if not script_tag:
-            raise ValueError("Weather data script tag not found!")
+        if not script_tag or not script_tag.string.strip():
+            raise ValueError("Script tag content is empty or missing!")
 
-        json_data = json.loads(unescape(script_tag.string))
+        _LOGGER.debug(f"Script tag content: {script_tag.string[:500]}")  # Log first 500 characters
+
+        try:
+            json_data = json.loads(script_tag.string.replace("'", '"'))
+        except json.JSONDecodeError as e:
+            _LOGGER.error(f"Error decoding JSON: {e}")
+            raise ValueError("Failed to parse weather data from script tag!")
+
         api_key = json_data.get("process.env", {}).get("SUN_API_KEY")
+        _LOGGER.info(f"API Key: {api_key}")
 
         if not api_key:
             raise ValueError("API key not found in data!")
@@ -45,7 +53,8 @@ async def fetch_weather_data(session, station_id):
 
     except Exception as e:
         _LOGGER.error(f"Error fetching weather data: {e}")
-        return None
+        return {"error": str(e)}
+
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
