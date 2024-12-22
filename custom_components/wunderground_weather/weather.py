@@ -2,9 +2,7 @@ from homeassistant.components.weather import WeatherEntity
 from homeassistant.const import TEMP_CELSIUS
 import aiohttp
 from bs4 import BeautifulSoup
-from html import unescape
 import json
-import  html
 import logging
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +56,8 @@ async def fetch_weather_data(session, station_id):
     except Exception as e:
         _LOGGER.error(f"Error fetching weather data: {e}")
         return {"error": str(e)}
+
+
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the Wunderground Weather platform from a config entry."""
     station_id = config_entry.data["station_id"]
@@ -102,9 +102,14 @@ class WundergroundWeather(WeatherEntity):
     async def async_update(self):
         """Fetch data from the API."""
         _LOGGER.debug(f"Fetching weather data for station {self._station_id}")
+
         data = await fetch_weather_data(self._session, self._station_id)
+        _LOGGER.debug(f"Script tag content (decoded): {data[:500]}")
+        
+
         if not data:
             _LOGGER.warning(f"No data fetched for station {self._station_id}")
             self._data = {}
         else:
             self._data = data
+
