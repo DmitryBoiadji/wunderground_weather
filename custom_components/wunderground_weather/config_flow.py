@@ -1,6 +1,6 @@
 from homeassistant import config_entries
 import voluptuous as vol
-from . import DOMAIN
+from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
 
 
 class WundergroundWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -28,6 +28,7 @@ class WundergroundWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required("station_id"): str,
+                    vol.Optional("update_interval", DEFAULT_UPDATE_INTERVAL): int,
                 }
             ),
             errors=errors,

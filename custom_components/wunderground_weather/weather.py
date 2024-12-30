@@ -7,7 +7,6 @@ import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-DOMAIN = "wunderground_weather"
 
 
 async def fetch_weather_data(session, station_id):
