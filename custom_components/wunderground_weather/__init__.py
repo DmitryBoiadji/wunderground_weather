@@ -2,16 +2,18 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from .weather import fetch_weather_data
 from datetime import timedelta
 
-from .const import DOMAIN
+from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Set up Wunderground integration from a config entry."""
     hass.data.setdefault(DOMAIN, {})
-    update_interval = timedelta(seconds=config_entry.data.get("update_interval"))
+
+    update_interval = timedelta(seconds=config_entry.data.get("update_interval", DEFAULT_UPDATE_INTERVAL))
 
     coordinator = DataUpdateCoordinator(
         hass,

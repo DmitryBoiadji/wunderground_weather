@@ -28,7 +28,7 @@ class WundergroundWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required("station_id"): str,
-                    vol.Optional("update_interval", DEFAULT_UPDATE_INTERVAL): int,
+                    vol.Required("update_interval", DEFAULT_UPDATE_INTERVAL): int,
                 }
             ),
             errors=errors,
