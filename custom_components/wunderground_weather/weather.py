@@ -1,5 +1,5 @@
 from homeassistant.components.weather import WeatherEntity
-from homeassistant.const import TEMP_CELSIUS
+from homeassistant.util.unit_system import UnitOfTemperature
 import aiohttp
 from bs4 import BeautifulSoup
 import json
@@ -138,7 +138,7 @@ class WundergroundWeather(WeatherEntity):
 
     @property
     def native_temperature_unit(self):
-        return TEMP_CELSIUS
+        return UnitOfTemperature.CELSIUS
 
     @property
     def native_wind_speed(self):
