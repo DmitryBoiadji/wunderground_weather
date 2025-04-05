@@ -21,6 +21,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     update_interval = entry.options.get(CONF_UPDATE_INTERVAL, 
                                       entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
     
+    _LOGGER.info("Setting up Wunderground Weather for station %s with update interval %d seconds", 
+                entry.data["station_id"], update_interval)
+    
     # Initialize the coordinator
     session = async_get_clientsession(hass)
     station_id = entry.data["station_id"]
@@ -39,6 +42,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Set up platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     
+    # Register options update listener
+    entry.async_on_unload(entry.add_update_listener(async_update_options))
+    
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -53,11 +59,18 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     # Get the new update interval from options
     update_interval = entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
     
+    _LOGGER.info("Updating options for Wunderground Weather station %s", entry.data["station_id"])
+    _LOGGER.info("New update interval: %d seconds", update_interval)
+    
     # Get the coordinator
     coordinator = hass.data[DOMAIN][entry.entry_id]
     
     # Update the coordinator's update interval
     coordinator.update_interval = timedelta(seconds=update_interval)
+    
+    # Log the update interval change
+    _LOGGER.info("Update interval changed to %d seconds for station %s", 
+                update_interval, entry.data["station_id"])
     
     # Request a refresh to apply the new interval
     await coordinator.async_request_refresh()

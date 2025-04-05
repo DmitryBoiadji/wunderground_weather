@@ -24,6 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 
 async def fetch_weather_data(session, station_id):
     """Fetch weather data asynchronously."""
+    _LOGGER.debug("Fetching weather data for station %s", station_id)
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.9",
@@ -58,7 +59,9 @@ async def fetch_weather_data(session, station_id):
         )
         async with session.get(api_url) as api_response:
             api_response.raise_for_status()
-            return await api_response.json()
+            data = await api_response.json()
+            _LOGGER.debug("Successfully fetched weather data for station %s", station_id)
+            return data
 
     except Exception as e:
         _LOGGER.error(f"Error fetching weather data: {e}")
@@ -81,6 +84,7 @@ class WundergroundWeather(CoordinatorEntity, WeatherEntity):
         """Initialize the weather entity."""
         super().__init__(coordinator)
         self._station_id = station_id
+        self._station_name = coordinator.config_entry.data.get("station_name", f"Station {station_id}")
 
     @property
     def unique_id(self):
@@ -89,7 +93,8 @@ class WundergroundWeather(CoordinatorEntity, WeatherEntity):
 
     @property
     def name(self):
-        return f"Wunderground Weather {self._station_id}"
+        """Return the name of the weather entity."""
+        return self._station_name
 
     @property
     def _data(self):

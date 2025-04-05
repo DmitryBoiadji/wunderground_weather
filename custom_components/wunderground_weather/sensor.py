@@ -53,7 +53,8 @@ class WundergroundWeatherSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._station_id = station_id
         self._sensor_type = sensor_type
-        self._attr_name = f"{SENSOR_TYPES[sensor_type][0]} {station_id}"
+        self._station_name = coordinator.config_entry.data.get("station_name", f"Station {station_id}")
+        self._attr_name = f"{SENSOR_TYPES[sensor_type][0]} {self._station_name}"
         self._attr_unique_id = f"{station_id}_{sensor_type}"
         self._attr_native_unit_of_measurement = SENSOR_TYPES[sensor_type][1]
         self._attr_icon = SENSOR_TYPES[sensor_type][2]

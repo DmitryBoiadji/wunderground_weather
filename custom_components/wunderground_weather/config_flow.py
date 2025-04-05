@@ -5,6 +5,7 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL,
     CONF_STATION_ID,
     CONF_UPDATE_INTERVAL,
+    CONF_STATION_NAME,
 )
 
 
@@ -19,6 +20,7 @@ class WundergroundWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             station_id = user_input.get(CONF_STATION_ID)
+            station_name = user_input.get(CONF_STATION_NAME, f"Station {station_id}")
             update_interval = user_input.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
 
             if not station_id:
@@ -30,9 +32,10 @@ class WundergroundWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         return self.async_abort(reason="already_configured")
 
                 return self.async_create_entry(
-                    title=f"Station {station_id}",
+                    title=station_name,
                     data={
                         CONF_STATION_ID: station_id,
+                        CONF_STATION_NAME: station_name,
                         CONF_UPDATE_INTERVAL: update_interval,
                     },
                     options={
@@ -45,6 +48,7 @@ class WundergroundWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_STATION_ID): str,
+                    vol.Optional(CONF_STATION_NAME): str,
                     vol.Required(
                         CONF_UPDATE_INTERVAL,
                         default=DEFAULT_UPDATE_INTERVAL

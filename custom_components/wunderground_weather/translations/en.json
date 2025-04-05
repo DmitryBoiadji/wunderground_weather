@@ -6,6 +6,7 @@
         "description": "Enter the Station ID to fetch weather data.",
         "data": {
           "station_id": "Station ID",
+          "station_name": "Station Name (optional)",
           "update_interval": "Update Interval (seconds, min: 30, default: 60)"
         }
       }
