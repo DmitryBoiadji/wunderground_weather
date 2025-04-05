@@ -57,3 +57,24 @@ class WundergroundWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_import(self, import_data):
         """Import config from configuration.yaml."""
         return await self.async_step_user(import_data)
+
+    async def async_step_options(self, user_input=None):
+        """Handle options updates."""
+        if user_input is not None:
+            return self.async_create_entry(
+                title=self.config_entry.title,
+                data=self.config_entry.data,
+                options=user_input,
+            )
+            
+        return self.async_show_form(
+            step_id="options",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_UPDATE_INTERVAL,
+                        default=self.config_entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+                    ): vol.All(vol.Coerce(int), vol.Range(min=30, max=3600)),
+                }
+            ),
+        )

@@ -5,12 +5,24 @@
         "title": "Set up Wunderground Weather",
         "description": "Enter the Station ID to fetch weather data.",
         "data": {
-          "station_id": "Station ID"
+          "station_id": "Station ID",
+          "update_interval": "Update Interval (seconds, min: 30, default: 60)"
         }
       }
     },
     "error": {
       "invalid_station_id": "Invalid Station ID"
+    }
+  },
+  "options": {
+    "step": {
+      "options": {
+        "title": "Wunderground Weather Options",
+        "description": "Configure the update interval for this weather station.",
+        "data": {
+          "update_interval": "Update Interval (seconds, min: 30, default: 60)"
+        }
+      }
     }
   }
 }

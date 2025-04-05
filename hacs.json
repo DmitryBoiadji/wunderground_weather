@@ -1,7 +1,7 @@
 {
   "domain": "wunderground_weather",
   "name": "Wunderground Weather",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "requirements": ["requests", "beautifulsoup4"],
   "codeowners": ["DmitryBoiadji"],
   "documentation": "https://github.com/DmitryBoiadji/wunderground_weather",
