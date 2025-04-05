@@ -189,6 +189,23 @@ def map_condition(data):
     uv_index = data.get("uv", 0)
     obs_time = data.get("obsTimeLocal", "")
 
+    # Ensure all values are numbers
+    try:
+        temp = float(temp) if temp is not None else 0
+        humidity = float(humidity) if humidity is not None else 0
+        wind_speed = float(wind_speed) if wind_speed is not None else 0
+        precip_rate = float(precip_rate) if precip_rate is not None else 0
+        solar_radiation = float(solar_radiation) if solar_radiation is not None else 0
+        uv_index = float(uv_index) if uv_index is not None else 0
+    except (ValueError, TypeError):
+        _LOGGER.warning("Error converting weather values to numbers")
+        temp = 0
+        humidity = 0
+        wind_speed = 0
+        precip_rate = 0
+        solar_radiation = 0
+        uv_index = 0
+
     # Safely determine if it's day or night
     is_day = True  # Default to day
     try:

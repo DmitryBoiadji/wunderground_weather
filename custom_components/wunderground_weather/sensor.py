@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 from homeassistant.util import dt as dt_util
+import logging
 
 from .const import (
     DOMAIN,
@@ -20,6 +21,8 @@ from .const import (
     CONF_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -56,36 +59,68 @@ class WundergroundWeatherSensor(CoordinatorEntity, SensorEntity):
         self._attr_icon = SENSOR_TYPES[sensor_type][2]
 
     @property
-    def native_value(self) -> StateType:
-        """Return the state of the sensor."""
+    def _data(self):
+        """Get the processed data from coordinator."""
         if not self.coordinator.data:
             return None
-
+            
         data = self.coordinator.data
+        # Handle the case where data might be in observations array
+        if "observations" in data and isinstance(data["observations"], list) and len(data["observations"]) > 0:
+            return data["observations"][0]
+        return data
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the state of the sensor."""
+        data = self._data
+        if not data:
+            return None
+
+        # Check if data is in the expected format
+        if not isinstance(data, dict):
+            _LOGGER.warning("Unexpected data format: %s", data)
+            return None
+            
         metric = data.get("metric", {})
 
-        if self._sensor_type == "temperature":
-            return metric.get("temp")
-        elif self._sensor_type == "humidity":
-            return data.get("humidity")
-        elif self._sensor_type == "pressure":
-            return metric.get("pressure")
-        elif self._sensor_type == "wind_speed":
-            return metric.get("windSpeed")
-        elif self._sensor_type == "wind_gust":
-            return metric.get("windGust")
-        elif self._sensor_type == "wind_bearing":
-            return data.get("winddir")
-        elif self._sensor_type == "dew_point":
-            return metric.get("dewpt")
-        elif self._sensor_type == "solar_radiation":
-            return data.get("solarRadiation")
-        elif self._sensor_type == "uv":
-            return data.get("uv")
-        elif self._sensor_type == "precip_rate":
-            return metric.get("precipRate")
-        elif self._sensor_type == "precip_total":
-            return metric.get("precipTotal")
+        try:
+            if self._sensor_type == "temperature":
+                value = metric.get("temp")
+                return float(value) if value is not None else None
+            elif self._sensor_type == "humidity":
+                value = data.get("humidity")
+                return float(value) if value is not None else None
+            elif self._sensor_type == "pressure":
+                value = metric.get("pressure")
+                return float(value) if value is not None else None
+            elif self._sensor_type == "wind_speed":
+                value = metric.get("windSpeed")
+                return float(value) if value is not None else None
+            elif self._sensor_type == "wind_gust":
+                value = metric.get("windGust")
+                return float(value) if value is not None else None
+            elif self._sensor_type == "wind_bearing":
+                value = data.get("winddir")
+                return float(value) if value is not None else None
+            elif self._sensor_type == "dew_point":
+                value = metric.get("dewpt")
+                return float(value) if value is not None else None
+            elif self._sensor_type == "solar_radiation":
+                value = data.get("solarRadiation")
+                return float(value) if value is not None else None
+            elif self._sensor_type == "uv":
+                value = data.get("uv")
+                return float(value) if value is not None else None
+            elif self._sensor_type == "precip_rate":
+                value = metric.get("precipRate")
+                return float(value) if value is not None else None
+            elif self._sensor_type == "precip_total":
+                value = metric.get("precipTotal")
+                return float(value) if value is not None else None
+        except (ValueError, TypeError) as e:
+            _LOGGER.warning("Error converting sensor value to number: %s", e)
+            return None
         
         return None
 

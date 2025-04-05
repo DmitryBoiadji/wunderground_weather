@@ -48,7 +48,7 @@ class WundergroundWeatherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_UPDATE_INTERVAL,
                         default=DEFAULT_UPDATE_INTERVAL
-                    ): vol.All(vol.Coerce(int), vol.Range(min=60, max=3600)),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=30, max=3600)),
                 }
             ),
             errors=errors,

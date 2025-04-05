@@ -1,5 +1,5 @@
 DOMAIN = "wunderground_weather"
-DEFAULT_UPDATE_INTERVAL = 300
+DEFAULT_UPDATE_INTERVAL = 60
 CONF_STATION_ID = "station_id"
 CONF_UPDATE_INTERVAL = "update_interval"
 
