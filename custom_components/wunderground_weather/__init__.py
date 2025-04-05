@@ -7,7 +7,12 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .weather import fetch_weather_data
 from datetime import timedelta
 
-from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL, CONF_UPDATE_INTERVAL
+from .const import (
+    DOMAIN,
+    DEFAULT_UPDATE_INTERVAL,
+    CONF_UPDATE_INTERVAL,
+    CONF_STATION_NAME,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
