@@ -1,11 +1,12 @@
 {
   "domain": "wunderground_weather",
   "name": "Wunderground Weather",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "requirements": ["requests", "beautifulsoup4"],
   "codeowners": ["DmitryBoiadji"],
   "config_flow": true,
   "documentation": "https://github.com/DmitryBoiadji/wunderground_weather",
-  "iot_class": "cloud_polling"
+  "iot_class": "cloud_polling",
+  "options_flow": true
 }
 
