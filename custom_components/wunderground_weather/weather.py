@@ -1,13 +1,26 @@
 from homeassistant.components.weather import WeatherEntity
 from homeassistant.util.unit_system import UnitOfTemperature
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+)
+from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 import aiohttp
 from bs4 import BeautifulSoup
 import json
 import logging
+import async_timeout
+from datetime import timedelta
+
+from .const import (
+    DOMAIN,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
-
-
 
 async def fetch_weather_data(session, station_id):
     """Fetch weather data asynchronously."""
@@ -29,8 +42,6 @@ async def fetch_weather_data(session, station_id):
 
         script_content = script_tag.string.replace("&q;", "\"")
 
-        _LOGGER.debug(f"Script tag content (decoded): {script_content[:500]}")  # Log first 500 characters
-
         try:
             json_data = json.loads(script_content)
         except json.JSONDecodeError as e:
@@ -38,8 +49,6 @@ async def fetch_weather_data(session, station_id):
             raise ValueError("Failed to parse weather data from script tag!")
 
         api_key = json_data.get("process.env", {}).get("SUN_API_KEY")
-        _LOGGER.info(f"API Key: {api_key}")
-
         if not api_key:
             raise ValueError("API key not found in data!")
 
@@ -53,71 +62,25 @@ async def fetch_weather_data(session, station_id):
 
     except Exception as e:
         _LOGGER.error(f"Error fetching weather data: {e}")
-        return {"error": str(e)}
+        return None
 
-
-async def async_setup_entry(hass, config_entry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
     """Set up the Wunderground Weather platform from a config entry."""
     station_id = config_entry.data["station_id"]
-    session = hass.helpers.aiohttp_client.async_get_clientsession()
-    async_add_entities([WundergroundWeather(station_id, session)], True)
+    
+    # Get the coordinator from hass data
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]
+    
+    # Add the weather entity
+    async_add_entities([WundergroundWeather(coordinator, station_id)], True)
 
+class WundergroundWeather(CoordinatorEntity, WeatherEntity):
+    """Representation of a weather condition."""
 
-class WundergroundWeather(WeatherEntity):
-    def __init__(self, station_id, session):
+    def __init__(self, coordinator: DataUpdateCoordinator, station_id: str):
         """Initialize the weather entity."""
+        super().__init__(coordinator)
         self._station_id = station_id
-        self._session = session
-        self._data = {}
-
-    # Example
-    # apparent_temperature: 12.0
-    # cloud_coverage: 0
-    # dew_point: 5.0
-    # humidity: 76
-    # precipitation_unit: mm
-    # pressure: 1019
-    # pressure_unit: hPa
-    # temperature: 14.2
-    # temperature_unit: °C
-    # uv_index: 2
-    # visibility: 10
-    # visibility_unit: km
-    # wind_bearing: 260
-    # wind_gust_speed: 51.56
-    # wind_speed: 35.17
-    # wind_speed_unit: km/h
-
-    # data:
-    # {
-    #   'stationID': 'ICHIIN35',
-    #   'obsTimeUtc': '2024-12-22T12:04:08Z',
-    #   'obsTimeLocal': '2024-12-22 14:04:08',
-    #   'neighborhood': 'Chișinău',
-    #   'softwareType': 'EasyWeatherPro_V5.1.7',
-    #   'country': 'MD',
-    #   'solarRadiation': 53.4,
-    #   'lon': 28.853941,
-    #   'realtimeFrequency': None,
-    #   'epoch': 1734869048,
-    #   'lat': 47.006611,
-    #   'uv': 0.0,
-    #   'winddir': 279,
-    #   'humidity': 86.0,
-    #   'qcStatus': 1,
-    #   'metric': {
-    #     'temp': -0.6,
-    #     'heatIndex': -0.6,
-    #     'dewpt': -2.6,
-    #     'windChill': -2.3,
-    #     'windSpeed': 5.0,
-    #     'windGust': 5.8,
-    #     'pressure': 1001.19,
-    #     'precipRate': 0.0,
-    #     'precipTotal': 0.0,
-    #     'elev': 20.4
-    #   }
-    # }
 
     @property
     def unique_id(self):
@@ -129,60 +92,91 @@ class WundergroundWeather(WeatherEntity):
         return f"Wunderground Weather {self._station_id}"
 
     @property
+    def _data(self):
+        """Get the processed data from coordinator."""
+        if not self.coordinator.data:
+            return None
+            
+        data = self.coordinator.data
+        # Handle the case where data might be in observations array
+        if "observations" in data and isinstance(data["observations"], list) and len(data["observations"]) > 0:
+            return data["observations"][0]
+        return data
+
+    @property
     def humidity(self):
-        return self._data.get("humidity")
+        """Return the humidity."""
+        data = self._data
+        return data.get("humidity") if data else None
 
     @property
     def native_temperature(self):
-        return self._data.get("metric", {}).get("temp")
+        """Return the temperature."""
+        data = self._data
+        return (
+            data.get("metric", {}).get("temp")
+            if data
+            else None
+        )
 
     @property
     def native_temperature_unit(self):
+        """Return the unit of measurement."""
         return UnitOfTemperature.CELSIUS
 
     @property
     def native_wind_speed(self):
-        return self._data.get("metric", {}).get("windSpeed")
+        """Return the wind speed."""
+        data = self._data
+        return (
+            data.get("metric", {}).get("windSpeed")
+            if data
+            else None
+        )
 
     @property
     def native_wind_gust_speed(self):
-        return self._data.get("metric", {}).get("windGust")
+        """Return the wind gust speed."""
+        data = self._data
+        return (
+            data.get("metric", {}).get("windGust")
+            if data
+            else None
+        )
 
     @property
     def native_wind_speed_unit(self):
+        """Return the unit of measurement for wind speed."""
         return "km/h"
 
     @property
-    def native_dew_point(self):
-        return self._data.get("metric", {}).get("dew_point")
+    def wind_bearing(self):
+        """Return the wind bearing."""
+        data = self._data
+        return data.get("winddir") if data else None
 
     @property
-    def wind_bearing(self):
-        return self._data.get("winddir", {})
+    def native_pressure(self):
+        """Return the pressure."""
+        data = self._data
+        return (
+            data.get("metric", {}).get("pressure")
+            if data
+            else None
+        )
+
+    @property
+    def native_pressure_unit(self):
+        """Return the unit of measurement for pressure."""
+        return "hPa"
 
     @property
     def condition(self):
-        return map_condition(self._data)
-
-    @property
-    def uv_index(self):
-        return self._data.get("uv", {})
-
-    async def async_update(self):
-        """Fetch data from the API."""
-        _LOGGER.debug(f"Fetching weather data for station {self._station_id}")
-
-        data = await fetch_weather_data(self._session, self._station_id)
-        _LOGGER.debug(f"Script tag content (decoded): {str(data)}")
-
+        """Return the weather condition."""
+        data = self._data
         if not data:
-            _LOGGER.warning(f"No data fetched for station {self._station_id}")
-            self._data = {}
-        else:
-            self._data = data.get('observations')[0]
-            _LOGGER.debug(f"DATA : {str(self._data)}")
-            _LOGGER.debug(f"TEST humidity : {str(self._data.get('humidity'))}")
-
+            return None
+        return map_condition(data)
 
 def map_condition(data):
     """Map weather data to Home Assistant conditions."""
@@ -195,7 +189,19 @@ def map_condition(data):
     uv_index = data.get("uv", 0)
     obs_time = data.get("obsTimeLocal", "")
 
-    is_day = "06:00" <= obs_time.split(" ")[1] <= "18:00"
+    # Safely determine if it's day or night
+    is_day = True  # Default to day
+    try:
+        if obs_time and " " in obs_time:
+            time_parts = obs_time.split(" ")
+            if len(time_parts) > 1:
+                time_str = time_parts[1]
+                if ":" in time_str:
+                    hour_str = time_str.split(":")[0]
+                    hour = int(hour_str)
+                    is_day = 6 <= hour <= 18
+    except (ValueError, IndexError):
+        _LOGGER.warning("Could not parse observation time: %s", obs_time)
 
     if precip_rate > 0.0:
         if temp <= 0:
