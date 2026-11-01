@@ -1,239 +1,204 @@
-from homeassistant.components.weather import WeatherEntity
-from homeassistant.util.unit_system import UnitOfTemperature
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
+"""Weather entity for Wunderground Weather."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from homeassistant.components.weather import (
+    CoordinatorWeatherEntity,
+    Forecast,
+    WeatherEntityFeature,
 )
-from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-import aiohttp
-import logging
-import re
-import async_timeout
-from datetime import timedelta
-
-from .const import (
-    DOMAIN,
-    CONF_UPDATE_INTERVAL,
-    DEFAULT_UPDATE_INTERVAL,
+from homeassistant.const import (
+    UnitOfLength,
+    UnitOfPrecipitationDepth,
+    UnitOfPressure,
+    UnitOfSpeed,
+    UnitOfTemperature,
 )
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
-_LOGGER = logging.getLogger(__name__)
+from .api import to_float
+from .condition import current_condition
+from .const import ATTRIBUTION, DOMAIN
+from .coordinator import (
+    WundergroundConfigEntry,
+    WundergroundData,
+    WundergroundForecastCoordinator,
+    WundergroundObservationCoordinator,
+)
+from .entity import station_device_info
+from .forecast import daily_forecast, hourly_forecast, twice_daily_forecast
 
-# Current page: inline script with `const data = {"API_KEY":"..."}`.
-# Legacy page: app-root-state JSON with "SUN_API_KEY".
-API_KEY_PATTERN = re.compile(r'"(?:SUN_)?API_KEY"\s*:\s*"([A-Za-z0-9]+)"')
+PARALLEL_UPDATES = 0
 
-async def fetch_weather_data(session, station_id):
-    """Fetch weather data asynchronously."""
-    _LOGGER.debug("Fetching weather data for station %s", station_id)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-    }
-    url = f"https://www.wunderground.com/dashboard/pws/{station_id}"
-    try:
-        async with session.get(url, headers=headers) as response:
-            response.raise_for_status()
-            html_content = await response.text()
 
-        # The legacy Angular page encoded quotes as &q; inside app-root-state
-        match = API_KEY_PATTERN.search(html_content.replace("&q;", '"'))
-        if not match:
-            raise ValueError("API key not found on the dashboard page, markup may have changed")
-        api_key = match.group(1)
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: WundergroundConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    """Set up the Wunderground Weather entity from a config entry."""
+    async_add_entities([WundergroundWeather(entry.runtime_data)])
 
-        api_url = (
-            f"https://api.weather.com/v2/pws/observations/current?"
-            f"apiKey={api_key}&stationId={station_id}&numericPrecision=decimal&format=json&units=m"
-        )
-        async with session.get(api_url) as api_response:
-            api_response.raise_for_status()
-            data = await api_response.json()
-            _LOGGER.debug("Successfully fetched weather data for station %s", station_id)
-            return data
 
-    except Exception as e:
-        _LOGGER.error(f"Error fetching weather data: {e}")
-        return None
+class WundergroundWeather(
+    CoordinatorWeatherEntity[
+        WundergroundObservationCoordinator,
+        WundergroundForecastCoordinator,
+        WundergroundForecastCoordinator,
+        WundergroundForecastCoordinator,
+    ]
+):
+    """Station observations combined with weather.com conditions and forecasts."""
 
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
-    """Set up the Wunderground Weather platform from a config entry."""
-    station_id = config_entry.data["station_id"]
-    
-    # Get the coordinator from hass data
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]
-    
-    # Add the weather entity
-    async_add_entities([WundergroundWeather(coordinator, station_id)], True)
+    _attr_attribution = ATTRIBUTION
+    _attr_has_entity_name = True
+    _attr_name = None
+    _attr_native_precipitation_unit = UnitOfPrecipitationDepth.MILLIMETERS
+    _attr_native_pressure_unit = UnitOfPressure.HPA
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_visibility_unit = UnitOfLength.KILOMETERS
+    _attr_native_wind_speed_unit = UnitOfSpeed.KILOMETERS_PER_HOUR
+    _attr_supported_features = (
+        WeatherEntityFeature.FORECAST_DAILY
+        | WeatherEntityFeature.FORECAST_TWICE_DAILY
+        | WeatherEntityFeature.FORECAST_HOURLY
+    )
 
-class WundergroundWeather(CoordinatorEntity, WeatherEntity):
-    """Representation of a weather condition."""
-
-    def __init__(self, coordinator: DataUpdateCoordinator, station_id: str):
+    def __init__(self, data: WundergroundData) -> None:
         """Initialize the weather entity."""
-        super().__init__(coordinator)
-        self._station_id = station_id
-        self._station_name = coordinator.config_entry.data.get("station_name", f"Station {station_id}")
+        super().__init__(
+            data.observation,
+            daily_coordinator=data.forecast,
+            hourly_coordinator=data.forecast,
+            twice_daily_coordinator=data.forecast,
+        )
+        self._forecast_coordinator = data.forecast
+        # Same unique ID as earlier versions to keep the entity registry entry
+        self._attr_unique_id = f"{DOMAIN}_{data.observation.station_id}"
+        self._attr_device_info = station_device_info(data.observation)
+
+    async def async_added_to_hass(self) -> None:
+        """Keep the conditions coordinator polling while the entity exists."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self._forecast_coordinator.async_add_listener(
+                self._handle_conditions_update
+            )
+        )
+
+    @callback
+    def _handle_conditions_update(self) -> None:
+        """Write the state when weather.com conditions change."""
+        self.async_write_ha_state()
 
     @property
-    def unique_id(self):
-        """Return a unique ID for this entity."""
-        return f"wunderground_weather_{self._station_id}"
+    def available(self) -> bool:
+        """Return False while the station is not reporting."""
+        return super().available and not self.coordinator.is_stale
 
     @property
-    def name(self):
-        """Return the name of the weather entity."""
-        return self._station_name
+    def _observation(self) -> dict[str, Any]:
+        """Return the latest station observation."""
+        return self.coordinator.data or {}
 
     @property
-    def _data(self):
-        """Get the processed data from coordinator."""
-        if not self.coordinator.data:
-            return None
-            
-        data = self.coordinator.data
-        # Handle the case where data might be in observations array
-        if "observations" in data and isinstance(data["observations"], list) and len(data["observations"]) > 0:
-            return data["observations"][0]
-        return data
+    def _metric(self) -> dict[str, Any]:
+        """Return the metric block of the observation."""
+        return self._observation.get("metric") or {}
 
     @property
-    def humidity(self):
-        """Return the humidity."""
-        data = self._data
-        return data.get("humidity") if data else None
+    def _conditions(self) -> dict[str, Any] | None:
+        """Return weather.com current conditions, if known."""
+        data = self._forecast_coordinator.data
+        return data.conditions if data else None
 
     @property
-    def native_temperature(self):
+    def condition(self) -> str | None:
+        """Return the current condition."""
+        return current_condition(self._observation, self._conditions, dt_util.utcnow())
+
+    @property
+    def native_temperature(self) -> float | None:
         """Return the temperature."""
-        data = self._data
-        return (
-            data.get("metric", {}).get("temp")
-            if data
-            else None
-        )
+        return to_float(self._metric.get("temp"))
 
     @property
-    def native_temperature_unit(self):
-        """Return the unit of measurement."""
-        return UnitOfTemperature.CELSIUS
-
-    @property
-    def native_wind_speed(self):
-        """Return the wind speed."""
-        data = self._data
-        return (
-            data.get("metric", {}).get("windSpeed")
-            if data
-            else None
-        )
-
-    @property
-    def native_wind_gust_speed(self):
-        """Return the wind gust speed."""
-        data = self._data
-        return (
-            data.get("metric", {}).get("windGust")
-            if data
-            else None
-        )
-
-    @property
-    def native_wind_speed_unit(self):
-        """Return the unit of measurement for wind speed."""
-        return "km/h"
-
-    @property
-    def wind_bearing(self):
-        """Return the wind bearing."""
-        data = self._data
-        return data.get("winddir") if data else None
-
-    @property
-    def native_pressure(self):
-        """Return the pressure."""
-        data = self._data
-        return (
-            data.get("metric", {}).get("pressure")
-            if data
-            else None
-        )
-
-    @property
-    def native_pressure_unit(self):
-        """Return the unit of measurement for pressure."""
-        return "hPa"
-
-    @property
-    def condition(self):
-        """Return the weather condition."""
-        data = self._data
-        if not data:
+    def native_apparent_temperature(self) -> float | None:
+        """Return the feels like temperature."""
+        temperature = to_float(self._metric.get("temp"))
+        heat_index = to_float(self._metric.get("heatIndex"))
+        wind_chill = to_float(self._metric.get("windChill"))
+        if temperature is None:
             return None
-        return map_condition(data)
+        if heat_index is not None and heat_index > temperature:
+            return heat_index
+        if wind_chill is not None and wind_chill < temperature:
+            return wind_chill
+        return temperature
 
-def map_condition(data):
-    """Map weather data to Home Assistant conditions."""
-    metric = data.get("metric", {})
-    temp = metric.get("temp", 0)
-    humidity = data.get("humidity", 0)
-    wind_speed = metric.get("windSpeed", 0)
-    precip_rate = metric.get("precipRate", 0)
-    solar_radiation = data.get("solarRadiation", 0)
-    uv_index = data.get("uv", 0)
-    obs_time = data.get("obsTimeLocal", "")
+    @property
+    def native_dew_point(self) -> float | None:
+        """Return the dew point."""
+        return to_float(self._metric.get("dewpt"))
 
-    # Ensure all values are numbers
-    try:
-        temp = float(temp) if temp is not None else 0
-        humidity = float(humidity) if humidity is not None else 0
-        wind_speed = float(wind_speed) if wind_speed is not None else 0
-        precip_rate = float(precip_rate) if precip_rate is not None else 0
-        solar_radiation = float(solar_radiation) if solar_radiation is not None else 0
-        uv_index = float(uv_index) if uv_index is not None else 0
-    except (ValueError, TypeError):
-        _LOGGER.warning("Error converting weather values to numbers")
-        temp = 0
-        humidity = 0
-        wind_speed = 0
-        precip_rate = 0
-        solar_radiation = 0
-        uv_index = 0
+    @property
+    def humidity(self) -> float | None:
+        """Return the relative humidity."""
+        return to_float(self._observation.get("humidity"))
 
-    # Safely determine if it's day or night
-    is_day = True  # Default to day
-    try:
-        if obs_time and " " in obs_time:
-            time_parts = obs_time.split(" ")
-            if len(time_parts) > 1:
-                time_str = time_parts[1]
-                if ":" in time_str:
-                    hour_str = time_str.split(":")[0]
-                    hour = int(hour_str)
-                    is_day = 6 <= hour <= 18
-    except (ValueError, IndexError):
-        _LOGGER.warning("Could not parse observation time: %s", obs_time)
+    @property
+    def native_pressure(self) -> float | None:
+        """Return the pressure."""
+        return to_float(self._metric.get("pressure"))
 
-    if precip_rate > 0.0:
-        if temp <= 0:
-            return "snowy-rainy" if precip_rate > 0.1 else "snowy"
-        return "pouring" if precip_rate > 5.0 else "rainy"
+    @property
+    def native_wind_speed(self) -> float | None:
+        """Return the wind speed."""
+        return to_float(self._metric.get("windSpeed"))
 
-    if solar_radiation > 50 and is_day:
-        return "sunny" if humidity < 70 else "partlycloudy"
+    @property
+    def native_wind_gust_speed(self) -> float | None:
+        """Return the wind gust speed."""
+        return to_float(self._metric.get("windGust"))
 
-    if humidity >= 95 and solar_radiation < 10:
-        return "fog"
+    @property
+    def wind_bearing(self) -> float | None:
+        """Return the wind bearing."""
+        return to_float(self._observation.get("winddir"))
 
-    if wind_speed > 20:
-        return "windy-variant" if solar_radiation < 50 else "windy"
+    @property
+    def uv_index(self) -> float | None:
+        """Return the UV index."""
+        return to_float(self._observation.get("uv"))
 
-    if solar_radiation < 10 and not is_day:
-        return "clear-night"
+    @property
+    def cloud_coverage(self) -> float | None:
+        """Return the cloud coverage reported by weather.com."""
+        return to_float((self._conditions or {}).get("cloudCover"))
 
-    if solar_radiation < 50:
-        return "cloudy"
+    @property
+    def native_visibility(self) -> float | None:
+        """Return the visibility reported by weather.com."""
+        return to_float((self._conditions or {}).get("visibility"))
 
-    return "exceptional"
+    @callback
+    def _async_forecast_daily(self) -> list[Forecast] | None:
+        """Return the daily forecast."""
+        data = self._forecast_coordinator.data
+        return daily_forecast(data.daily if data else None, dt_util.utcnow())
+
+    @callback
+    def _async_forecast_twice_daily(self) -> list[Forecast] | None:
+        """Return the day and night forecast."""
+        data = self._forecast_coordinator.data
+        return twice_daily_forecast(data.daily if data else None, dt_util.utcnow())
+
+    @callback
+    def _async_forecast_hourly(self) -> list[Forecast] | None:
+        """Return the hourly forecast."""
+        data = self._forecast_coordinator.data
+        return hourly_forecast(data.hourly if data else None, dt_util.utcnow())

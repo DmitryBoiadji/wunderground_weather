@@ -1,20 +1,27 @@
-DOMAIN = "wunderground_weather"
-DEFAULT_UPDATE_INTERVAL = 60
-CONF_STATION_ID = "station_id"
-CONF_UPDATE_INTERVAL = "update_interval"
-CONF_STATION_NAME = "station_name"
+"""Constants for the Wunderground Weather integration."""
 
-# Sensor definitions
-SENSOR_TYPES = {
-    "temperature": ["Temperature", "°C", "mdi:thermometer"],
-    "humidity": ["Humidity", "%", "mdi:water-percent"],
-    "pressure": ["Pressure", "hPa", "mdi:gauge"],
-    "wind_speed": ["Wind Speed", "km/h", "mdi:weather-windy"],
-    "wind_gust": ["Wind Gust", "km/h", "mdi:weather-windy"],
-    "wind_bearing": ["Wind Bearing", "°", "mdi:compass"],
-    "dew_point": ["Dew Point", "°C", "mdi:water"],
-    "solar_radiation": ["Solar Radiation", "W/m²", "mdi:white-balance-sunny"],
-    "uv": ["UV Index", "", "mdi:weather-sunny"],
-    "precip_rate": ["Precipitation Rate", "mm/h", "mdi:water"],
-    "precip_total": ["Precipitation Total", "mm", "mdi:water"],
-}
+from datetime import timedelta
+import logging
+from typing import Final
+
+DOMAIN: Final = "wunderground_weather"
+LOGGER = logging.getLogger(__package__)
+
+CONF_STATION_ID: Final = "station_id"
+CONF_STATION_NAME: Final = "station_name"
+CONF_UPDATE_INTERVAL: Final = "update_interval"
+
+# Observation polling interval in seconds
+DEFAULT_UPDATE_INTERVAL: Final = 60
+MIN_UPDATE_INTERVAL: Final = 30
+MAX_UPDATE_INTERVAL: Final = 3600
+
+# Current conditions and forecasts change slowly, poll them less often
+FORECAST_UPDATE_INTERVAL: Final = timedelta(minutes=15)
+
+# A station that has not reported for this long is considered offline
+STALE_OBSERVATION_AGE: Final = timedelta(hours=1)
+
+ATTRIBUTION: Final = "Data provided by Weather Underground"
+MANUFACTURER: Final = "Weather Underground"
+DASHBOARD_URL: Final = "https://www.wunderground.com/dashboard/pws/{station_id}"

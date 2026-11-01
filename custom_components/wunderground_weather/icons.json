@@ -1,0 +1,30 @@
+{
+  "entity": {
+    "sensor": {
+      "dew_point": {
+        "default": "mdi:water-thermometer"
+      },
+      "heat_index": {
+        "default": "mdi:sun-thermometer"
+      },
+      "last_observation": {
+        "default": "mdi:clock-check-outline"
+      },
+      "precipitation_today": {
+        "default": "mdi:weather-pouring"
+      },
+      "solar_radiation": {
+        "default": "mdi:white-balance-sunny"
+      },
+      "uv_index": {
+        "default": "mdi:weather-sunny-alert"
+      },
+      "wind_chill": {
+        "default": "mdi:snowflake-thermometer"
+      },
+      "wind_gust": {
+        "default": "mdi:weather-windy-variant"
+      }
+    }
+  }
+}

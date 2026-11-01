@@ -1,81 +1,101 @@
 """The Wunderground Weather integration."""
-import logging
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from .weather import fetch_weather_data
-from datetime import timedelta
 
+from __future__ import annotations
+
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+from .api import WundergroundClient, normalize_station_id
 from .const import (
-    DOMAIN,
-    DEFAULT_UPDATE_INTERVAL,
-    CONF_UPDATE_INTERVAL,
+    CONF_STATION_ID,
     CONF_STATION_NAME,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL,
+    DOMAIN,
+    LOGGER,
+)
+from .coordinator import (
+    WundergroundConfigEntry,
+    WundergroundData,
+    WundergroundForecastCoordinator,
+    WundergroundObservationCoordinator,
 )
 
-_LOGGER = logging.getLogger(__name__)
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.WEATHER]
 
-PLATFORMS = ["weather", "sensor"]
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(
+    hass: HomeAssistant, entry: WundergroundConfigEntry
+) -> bool:
     """Set up Wunderground Weather from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
-    
-    # Get update interval from options or data
-    update_interval = entry.options.get(CONF_UPDATE_INTERVAL, 
-                                      entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
-    
-    _LOGGER.info("Setting up Wunderground Weather for station %s with update interval %d seconds", 
-                entry.data["station_id"], update_interval)
-    
-    # Initialize the coordinator
-    session = async_get_clientsession(hass)
-    station_id = entry.data["station_id"]
-    
-    coordinator = DataUpdateCoordinator(
-        hass,
-        _LOGGER,
-        name=f"wunderground_weather_{station_id}",
-        update_method=lambda: fetch_weather_data(session, station_id),
-        update_interval=timedelta(seconds=update_interval),
+    client = WundergroundClient(
+        async_get_clientsession(hass), entry.data[CONF_STATION_ID]
     )
-    
-    # Store coordinator in hass data
-    hass.data[DOMAIN][entry.entry_id] = coordinator
-    
-    # Set up platforms
+    observation = WundergroundObservationCoordinator(hass, entry, client)
+    # Raises ConfigEntryNotReady, Home Assistant retries the setup later
+    await observation.async_config_entry_first_refresh()
+
+    forecast = WundergroundForecastCoordinator(hass, entry, client, observation)
+    # Forecasts are optional, a failure here must not block the setup
+    await forecast.async_refresh()
+
+    entry.runtime_data = WundergroundData(
+        client=client, observation=observation, forecast=forecast
+    )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    
-    # Register options update listener
-    entry.async_on_unload(entry.add_update_listener(async_update_options))
-    
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+
+async def async_unload_entry(
+    hass: HomeAssistant, entry: WundergroundConfigEntry
+) -> bool:
     """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    return unload_ok
 
-async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Update options for the Wunderground Weather integration."""
-    # Get the new update interval from options
-    update_interval = entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
-    
-    _LOGGER.info("Updating options for Wunderground Weather station %s", entry.data["station_id"])
-    _LOGGER.info("New update interval: %d seconds", update_interval)
-    
-    # Get the coordinator
-    coordinator = hass.data[DOMAIN][entry.entry_id]
-    
-    # Update the coordinator's update interval
-    coordinator.update_interval = timedelta(seconds=update_interval)
-    
-    # Log the update interval change
-    _LOGGER.info("Update interval changed to %d seconds for station %s", 
-                update_interval, entry.data["station_id"])
-    
-    # Request a refresh to apply the new interval
-    await coordinator.async_request_refresh()
+async def _async_update_listener(
+    hass: HomeAssistant, entry: WundergroundConfigEntry
+) -> None:
+    """Reload the entry when options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_migrate_entry(
+    hass: HomeAssistant, entry: WundergroundConfigEntry
+) -> bool:
+    """Migrate old config entries."""
+    if entry.version > 1:
+        # Downgrade from a future version
+        return False
+
+    if entry.minor_version < 2:
+        # 1.1 stored the interval in data and options and had no unique ID
+        station_id = entry.data[CONF_STATION_ID]
+        update_interval = entry.options.get(
+            CONF_UPDATE_INTERVAL,
+            entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL),
+        )
+        unique_id = entry.unique_id
+        if unique_id is None:
+            candidate = normalize_station_id(station_id)
+            in_use = any(
+                other.unique_id == candidate
+                for other in hass.config_entries.async_entries(DOMAIN)
+                if other.entry_id != entry.entry_id
+            )
+            unique_id = None if in_use else candidate
+        hass.config_entries.async_update_entry(
+            entry,
+            data={
+                CONF_STATION_ID: station_id,
+                CONF_STATION_NAME: entry.data.get(CONF_STATION_NAME) or entry.title,
+            },
+            options={CONF_UPDATE_INTERVAL: update_interval},
+            unique_id=unique_id,
+            minor_version=2,
+        )
+        LOGGER.debug("Migrated config entry %s to version 1.2", entry.entry_id)
+
+    return True
