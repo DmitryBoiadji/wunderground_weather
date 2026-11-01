@@ -18,6 +18,9 @@ MAX_UPDATE_INTERVAL: Final = 3600
 
 # Current conditions and forecasts change slowly, poll them less often
 FORECAST_UPDATE_INTERVAL: Final = timedelta(minutes=15)
+# Keep serving forecasts this long when weather.com polls fail
+DAILY_FORECAST_MAX_AGE: Final = timedelta(hours=6)
+HOURLY_FORECAST_MAX_AGE: Final = timedelta(hours=2)
 
 # A station that has not reported for this long is considered offline
 STALE_OBSERVATION_AGE: Final = timedelta(hours=1)

@@ -45,7 +45,7 @@ async def test_setup_and_unload(
     )
 
     assert await hass.config_entries.async_unload(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert entry.state is ConfigEntryState.NOT_LOADED
 
 
@@ -58,7 +58,7 @@ async def test_setup_retries_when_station_offline(
     mock_responses(aioclient_mock, observation_status=204)
 
     await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     assert config_entry.state is ConfigEntryState.SETUP_RETRY
 
@@ -72,7 +72,7 @@ async def test_setup_works_without_forecast(
     mock_responses(aioclient_mock, forecast_status=500)
 
     assert await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     assert config_entry.state is ConfigEntryState.LOADED
     assert hass.states.get("weather.test_town").state != STATE_UNAVAILABLE
@@ -91,7 +91,7 @@ async def test_failed_update_marks_entities_unavailable(
     mock_responses(aioclient_mock, observation_status=500)
     freezer.tick(timedelta(seconds=61))
     async_fire_time_changed(hass)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     assert hass.states.get("sensor.test_town_temperature").state == STATE_UNAVAILABLE
     assert hass.states.get("weather.test_town").state == STATE_UNAVAILABLE
@@ -132,7 +132,7 @@ async def test_migrate_from_1_1(
     )
 
     assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     assert entry.state is ConfigEntryState.LOADED
     assert entry.minor_version == 2
@@ -146,3 +146,74 @@ async def test_migrate_from_1_1(
     assert hass.states.get(old_sensor.entity_id).state == "11.6"
     assert hass.states.get(old_weather.entity_id) is not None
     assert old_sensor.entity_id == "sensor.temperature_station_itest123"
+
+
+async def test_unload_stops_polling(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+    freezer,
+) -> None:
+    """No requests are made after the entry is unloaded."""
+    assert await hass.config_entries.async_unload(setup_integration.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    calls = aioclient_mock.call_count
+
+    freezer.tick(timedelta(minutes=30))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert aioclient_mock.call_count == calls
+
+
+async def test_migrate_lowercase_and_duplicate_ids(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """0.1.x stored IDs as typed; entity unique IDs keep that form."""
+    mock_responses(aioclient_mock)
+    entries = [
+        MockConfigEntry(
+            domain=DOMAIN,
+            title=title,
+            version=1,
+            minor_version=1,
+            data={CONF_STATION_ID: station_id, CONF_STATION_NAME: title},
+            options={CONF_UPDATE_INTERVAL: 60},
+        )
+        for station_id, title in (("itest123", "Lower"), ("ITEST123", "Upper"))
+    ]
+    for entry in entries:
+        entry.add_to_hass(hass)
+    entity_registry = er.async_get(hass)
+    lower_sensor = entity_registry.async_get_or_create(
+        "sensor", DOMAIN, "itest123_temperature", config_entry=entries[0]
+    )
+
+    assert await hass.config_entries.async_setup(entries[0].entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert all(entry.state is ConfigEntryState.LOADED for entry in entries)
+    assert all(entry.minor_version == 2 for entry in entries)
+    # Only one entry can own the normalized unique ID
+    assert sorted(str(entry.unique_id) for entry in entries) == ["ITEST123", "None"]
+    assert entries[0].data[CONF_STATION_ID] == "itest123"
+    # The API gets the uppercase ID, the entity keeps its old unique ID
+    assert hass.states.get(lower_sensor.entity_id).state == "11.6"
+
+
+async def test_migrate_from_future_version_fails(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Entries from a newer version are not loaded."""
+    mock_responses(aioclient_mock)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Test Town",
+        version=2,
+        minor_version=1,
+        data={CONF_STATION_ID: STATION_ID, CONF_STATION_NAME: "Test Town"},
+    )
+    entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.state is ConfigEntryState.MIGRATION_ERROR

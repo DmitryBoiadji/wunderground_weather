@@ -28,21 +28,38 @@ jobs:
         with:
           category: integration
 
-  tests:
-    name: Lint and tests
+  lint:
+    name: Ruff
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
-          cache: pip
-          cache-dependency-path: requirements_test.txt
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+
+  tests:
+    name: Tests (Home Assistant ${{ matrix.homeassistant }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Minimum version declared in hacs.json
+          - homeassistant: "2025.4.0"
+            python: "3.13"
+            install: pytest-homeassistant-custom-component==0.13.232
+          - homeassistant: latest pinned
+            python: "3.14"
+            install: -r requirements_test.txt
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
       - name: Install dependencies
-        run: pip install -r requirements_test.txt ruff
-      - name: Ruff
-        run: |
-          ruff check .
-          ruff format --check .
+        run: pip install ${{ matrix.install }}
       - name: Pytest
         run: pytest

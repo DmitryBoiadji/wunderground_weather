@@ -21,8 +21,13 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from .api import to_float
-from .condition import current_condition
-from .const import ATTRIBUTION, DOMAIN
+from .condition_mapping import current_condition, is_fresh_conditions
+from .const import (
+    ATTRIBUTION,
+    DAILY_FORECAST_MAX_AGE,
+    DOMAIN,
+    HOURLY_FORECAST_MAX_AGE,
+)
 from .coordinator import (
     WundergroundConfigEntry,
     WundergroundData,
@@ -75,6 +80,11 @@ class WundergroundWeather(
             daily_coordinator=data.forecast,
             hourly_coordinator=data.forecast,
             twice_daily_coordinator=data.forecast,
+            # Old parts of a forecast are dropped in forecast.py, so serve the
+            # last successful forecast through short weather.com outages
+            daily_forecast_valid=DAILY_FORECAST_MAX_AGE,
+            hourly_forecast_valid=HOURLY_FORECAST_MAX_AGE,
+            twice_daily_forecast_valid=DAILY_FORECAST_MAX_AGE,
         )
         self._forecast_coordinator = data.forecast
         # Same unique ID as earlier versions to keep the entity registry entry
@@ -112,9 +122,13 @@ class WundergroundWeather(
 
     @property
     def _conditions(self) -> dict[str, Any] | None:
-        """Return weather.com current conditions, if known."""
+        """Return weather.com current conditions, if known and recent."""
         data = self._forecast_coordinator.data
-        return data.conditions if data else None
+        if not data or not data.conditions:
+            return None
+        if not is_fresh_conditions(data.conditions, dt_util.utcnow()):
+            return None
+        return data.conditions
 
     @property
     def condition(self) -> str | None:

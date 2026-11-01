@@ -21,8 +21,18 @@ from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
+from pytest_homeassistant_custom_component.test_util.aiohttp import (
+    AiohttpClientMocker,
+)
 
-from .conftest import STATION_ID
+from custom_components.wunderground_weather.const import (
+    CONF_STATION_ID,
+    CONF_STATION_NAME,
+    CONF_UPDATE_INTERVAL,
+    DOMAIN,
+)
+
+from .conftest import STATION_ID, mock_responses
 
 
 @pytest.mark.parametrize(
@@ -175,7 +185,7 @@ async def test_stale_station_is_unavailable(
     """Values freeze when a station stops reporting, so show them as unavailable."""
     freezer.tick(timedelta(hours=2))
     async_fire_time_changed(hass)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     assert hass.states.get("sensor.test_town_temperature").state == STATE_UNAVAILABLE
     assert hass.states.get("weather.test_town").state == STATE_UNAVAILABLE
@@ -184,3 +194,28 @@ async def test_stale_station_is_unavailable(
         hass.states.get("sensor.test_town_last_observation").state
         == "2026-11-01T11:28:33+00:00"
     )
+
+
+async def test_long_interval_is_not_stale(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, freezer
+) -> None:
+    """With a 1 hour interval, data just over an hour old is still valid."""
+    mock_responses(aioclient_mock)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Test Town",
+        unique_id=STATION_ID,
+        version=1,
+        minor_version=2,
+        data={CONF_STATION_ID: STATION_ID, CONF_STATION_NAME: "Test Town"},
+        options={CONF_UPDATE_INTERVAL: 3600},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    freezer.tick(timedelta(minutes=61))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert hass.states.get("sensor.test_town_temperature").state == "11.6"

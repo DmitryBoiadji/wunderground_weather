@@ -145,10 +145,14 @@ def estimate_condition(observation: dict[str, Any], now: datetime) -> str | None
     humidity = to_float(observation.get("humidity"))
     wind_speed = to_float(metric.get("windSpeed"))
 
-    if humidity is not None and humidity >= FOG_HUMIDITY:
-        return ATTR_CONDITION_FOG
-
     sky = _estimate_sky(observation, now)
+    # Saturated air under a bright sun is dew or wet ground, not fog
+    if (
+        humidity is not None
+        and humidity >= FOG_HUMIDITY
+        and sky in (None, ATTR_CONDITION_CLOUDY)
+    ):
+        return ATTR_CONDITION_FOG
     if wind_speed is not None and wind_speed >= WINDY_SPEED:
         return (
             ATTR_CONDITION_WINDY_VARIANT
@@ -186,20 +190,24 @@ def current_condition(
     """Return the current condition at the station.
 
     weather.com conditions are preferred. The station rain gauge overrides
-    them when it measures precipitation that weather.com does not report.
+    them when it measures precipitation that weather.com does not report,
+    unless weather.com reports exceptional weather (storms, dust).
     Station sensors are used as a fallback.
     """
     metric = observation.get("metric") or {}
     rate = to_float(metric.get("precipRate"))
 
     reported = None
-    if conditions and _is_fresh(conditions, now):
+    if conditions and is_fresh_conditions(conditions, now):
         reported = condition_from_icon(
             conditions.get("iconCode"), conditions.get("dayOrNight") != "N"
         )
 
     if rate is not None and rate > 0:
-        if reported in PRECIPITATION_CONDITIONS:
+        if (
+            reported in PRECIPITATION_CONDITIONS
+            or reported == ATTR_CONDITION_EXCEPTIONAL
+        ):
             return reported
         return precipitation_condition(rate, to_float(metric.get("temp")))
     if reported is not None:
@@ -207,7 +215,7 @@ def current_condition(
     return estimate_condition(observation, now)
 
 
-def _is_fresh(conditions: dict[str, Any], now: datetime) -> bool:
+def is_fresh_conditions(conditions: dict[str, Any], now: datetime) -> bool:
     """Return True if weather.com conditions are recent enough to use."""
     if (timestamp := to_float(conditions.get("validTimeUtc"))) is None:
         return True

@@ -151,7 +151,7 @@ async def test_options_flow_reloads_entry(
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_UPDATE_INTERVAL: 300}
     )
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options == {CONF_UPDATE_INTERVAL: 300}

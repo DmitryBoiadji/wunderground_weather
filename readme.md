@@ -64,9 +64,9 @@ The integration reads the public API key that the Weather Underground website em
 - the current observation of the station, every update interval;
 - the current conditions and forecasts for the station location from weather.com, every 15 minutes.
 
-The key is cached and fetched again only when the API rejects it. This is not an official API: if Weather Underground changes its website, the integration may stop working until it is updated.
+The key is cached and fetched again only when the API rejects it. If the page has no working key, it is checked again after 10 minutes, not on every update. This is not an official API: if Weather Underground changes its website, the integration may stop working until it is updated.
 
-The current condition comes from weather.com. If the station rain gauge measures precipitation that weather.com does not report, the station wins. When weather.com is not available, the condition is estimated from the station sensors.
+The current condition comes from weather.com. If the station rain gauge measures precipitation that weather.com does not report, the station wins, unless weather.com reports exceptional weather such as a storm. Forecasts and conditions stay available for a few hours when weather.com cannot be reached. When weather.com is not available, the condition is estimated from the station sensors.
 
 ## Upgrading from 0.1.x
 

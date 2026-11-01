@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
+from datetime import timedelta
+import logging
+import traceback
+
 import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import pytest
+from pytest_homeassistant_custom_component.common import async_fire_time_changed
 from pytest_homeassistant_custom_component.test_util.aiohttp import (
     AiohttpClientMocker,
+    AiohttpClientMockResponse,
 )
 
 from custom_components.wunderground_weather.api import (
@@ -20,10 +27,14 @@ from custom_components.wunderground_weather.api import (
 
 from .conftest import (
     API_KEY,
+    CONDITIONS_URL,
+    DAILY_URL,
     DASHBOARD_URL,
+    HOURLY_URL,
     OBSERVATION_URL,
     load_fixture,
     load_json,
+    mock_responses,
 )
 
 
@@ -186,3 +197,110 @@ async def test_dashboard_unavailable(
 
     with pytest.raises(WundergroundConnectionError, match="HTTP 503"):
         await _client(hass).async_get_observation()
+
+
+async def test_concurrent_requests_share_key_refresh(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Parallel requests rejected with the same key load the page only once."""
+    aioclient_mock.get(
+        DASHBOARD_URL, text=load_fixture("dashboard.html").replace(API_KEY, "oldkey")
+    )
+    aioclient_mock.get(OBSERVATION_URL, json=load_json("observation.json"))
+    client = _client(hass)
+    await client.async_get_observation()
+
+    async def rejected(method, url, data):
+        # Yield so that all three requests are rejected before any refresh
+        await asyncio.sleep(0)
+        return AiohttpClientMockResponse(method, url, status=401)
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(DASHBOARD_URL, text=load_fixture("dashboard.html"))
+    for url, fixture in (
+        (CONDITIONS_URL, "conditions.json"),
+        (DAILY_URL, "forecast_daily.json"),
+        (HOURLY_URL, "forecast_hourly.json"),
+    ):
+        aioclient_mock.get(f"{url}?apiKey=oldkey", side_effect=rejected)
+        aioclient_mock.get(f"{url}?apiKey={API_KEY}", json=load_json(fixture))
+
+    results = await asyncio.gather(
+        client.async_get_conditions(37.7, -122.4),
+        client.async_get_daily_forecast(37.7, -122.4),
+        client.async_get_hourly_forecast(37.7, -122.4),
+    )
+
+    assert all(results)
+    urls = [str(call[1]) for call in aioclient_mock.mock_calls]
+    assert len([url for url in urls if "dashboard" in url]) == 1
+    assert len([url for url in urls if "apiKey=oldkey" in url]) == 3
+
+
+async def test_rejected_fresh_key_waits_before_scraping_again(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, freezer
+) -> None:
+    """If the page only has a rejected key, it is not loaded on every poll."""
+    aioclient_mock.get(DASHBOARD_URL, text=load_fixture("dashboard.html"))
+    aioclient_mock.get(OBSERVATION_URL, status=401)
+    client = _client(hass)
+
+    def page_loads() -> int:
+        return len([c for c in aioclient_mock.mock_calls if "dashboard" in str(c[1])])
+
+    with pytest.raises(WundergroundApiKeyError):
+        await client.async_get_observation()
+    assert page_loads() == 2
+
+    with pytest.raises(WundergroundApiKeyError):
+        await client.async_get_observation()
+    assert page_loads() == 2
+
+    freezer.tick(timedelta(minutes=11))
+    with pytest.raises(WundergroundApiKeyError):
+        await client.async_get_observation()
+    assert page_loads() == 3
+
+
+async def test_missing_key_waits_before_scraping_again(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A page without a key is not loaded again right away."""
+    aioclient_mock.get(DASHBOARD_URL, text="<html></html>")
+    client = _client(hass)
+
+    for _ in range(3):
+        with pytest.raises(WundergroundApiKeyError):
+            await client.async_get_observation()
+    assert aioclient_mock.call_count == 1
+
+
+async def test_key_not_in_debug_logs(
+    hass: HomeAssistant,
+    setup_integration,
+    aioclient_mock: AiohttpClientMocker,
+    freezer,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Failed updates do not print the key, not even in debug tracebacks."""
+    caplog.set_level(logging.DEBUG)
+    aioclient_mock.clear_requests()
+    # aiohttp puts the full request URL into timeout errors
+    aioclient_mock.get(
+        OBSERVATION_URL,
+        exc=aiohttp.ClientConnectionError(
+            f"Connection timeout to host {OBSERVATION_URL}?apiKey={API_KEY}"
+        ),
+    )
+    mock_responses(aioclient_mock)
+
+    freezer.tick(timedelta(seconds=61))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert "apiKey=***" in caplog.text
+    assert API_KEY not in caplog.text
+    # Newer Home Assistant versions log the full chain at debug level
+    error = setup_integration.runtime_data.observation.last_exception
+    assert error is not None
+    assert API_KEY not in "".join(traceback.format_exception(error))

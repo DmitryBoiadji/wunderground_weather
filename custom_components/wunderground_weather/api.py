@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from typing import Any
 
 import aiohttp
@@ -30,6 +31,8 @@ API_KEY_PATTERN = re.compile(r'"(?:SUN_)?API_KEY"\s*:\s*"([A-Za-z0-9]+)"')
 STATION_ID_PATTERN = re.compile(r"^[A-Z0-9]+$")
 
 HTTP_NO_CONTENT = 204
+# Wait before scraping the page again when it gave no working key
+KEY_RETRY_COOLDOWN = 600  # seconds
 UNAUTHORIZED_STATUSES = frozenset({401, 403})
 
 
@@ -88,7 +91,8 @@ class WundergroundClient:
     """Fetch observations and forecasts for one personal weather station.
 
     The API key is scraped from the public dashboard page once and reused
-    until the API rejects it, then it is fetched again.
+    until the API rejects it, then it is fetched again. If the page has no
+    working key, it is not loaded again for KEY_RETRY_COOLDOWN seconds.
     """
 
     def __init__(self, session: aiohttp.ClientSession, station_id: str) -> None:
@@ -97,6 +101,7 @@ class WundergroundClient:
         self.station_id = normalize_station_id(station_id)
         self._api_key: str | None = None
         self._api_key_lock = asyncio.Lock()
+        self._key_retry_after: float | None = None
 
     async def async_get_observation(self) -> dict[str, Any]:
         """Return the latest observation of the station."""
@@ -151,6 +156,8 @@ class WundergroundClient:
             api_key = await self._async_get_api_key(rejected_key=api_key)
             status, data = await self._async_api_get(path, params, api_key)
             if status in UNAUTHORIZED_STATUSES:
+                # A fresh key that is rejected will not work a minute later either
+                self._key_retry_after = time.monotonic() + KEY_RETRY_COOLDOWN
                 raise WundergroundApiKeyError(
                     f"The API key from the dashboard page was rejected (HTTP {status})"
                 )
@@ -160,9 +167,21 @@ class WundergroundClient:
         """Return the cached API key, scraping a new one if needed."""
         async with self._api_key_lock:
             # Another request may have refreshed the key while we waited
-            if self._api_key is None or self._api_key == rejected_key:
-                self._api_key = None
+            if self._api_key is not None and self._api_key != rejected_key:
+                return self._api_key
+            if (
+                self._key_retry_after is not None
+                and time.monotonic() < self._key_retry_after
+            ):
+                raise WundergroundApiKeyError(
+                    "No working API key, the dashboard page will be checked again later"
+                )
+            self._api_key = None
+            try:
                 self._api_key = await self._async_fetch_api_key()
+            except WundergroundApiKeyError:
+                self._key_retry_after = time.monotonic() + KEY_RETRY_COOLDOWN
+                raise
             return self._api_key
 
     async def _async_fetch_api_key(self) -> str:
@@ -215,9 +234,11 @@ class WundergroundClient:
                         f"{path} returned invalid JSON"
                     ) from err
         except (aiohttp.ClientError, TimeoutError) as err:
+            # aiohttp errors may contain the request URL with the key, do not
+            # chain them or the key ends up in debug tracebacks
             raise WundergroundConnectionError(
                 f"Request to {path} failed: {_describe(err, api_key)}"
-            ) from err
+            ) from None
 
         if not isinstance(data, dict):
             raise WundergroundConnectionError(f"{path} returned unexpected data")

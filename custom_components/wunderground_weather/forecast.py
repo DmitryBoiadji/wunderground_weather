@@ -9,7 +9,7 @@ from homeassistant.components.weather import Forecast
 from homeassistant.util import dt as dt_util
 
 from .api import to_float
-from .condition import condition_from_icon
+from .condition_mapping import condition_from_icon
 
 # Daily entries are stamped 07:00 local time, so the calendar day ends 17 hours later
 DAY_REMAINDER = timedelta(hours=17)

@@ -37,13 +37,14 @@ async def async_setup_entry(
     await observation.async_config_entry_first_refresh()
 
     forecast = WundergroundForecastCoordinator(hass, entry, client, observation)
-    # Forecasts are optional, a failure here must not block the setup
-    await forecast.async_refresh()
-
     entry.runtime_data = WundergroundData(
         client=client, observation=observation, forecast=forecast
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Forecasts are optional, a slow or failing weather.com must not delay setup
+    entry.async_create_background_task(
+        hass, forecast.async_refresh(), f"{DOMAIN} first forecast refresh"
+    )
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
 

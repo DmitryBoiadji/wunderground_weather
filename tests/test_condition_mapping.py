@@ -7,7 +7,7 @@ from datetime import datetime
 from homeassistant.util import dt as dt_util
 import pytest
 
-from custom_components.wunderground_weather.condition import (
+from custom_components.wunderground_weather.condition_mapping import (
     condition_from_icon,
     current_condition,
     estimate_condition,
@@ -176,3 +176,23 @@ def test_forecasts_skip_the_past() -> None:
     next_day = dt_util.utc_from_timestamp(data["validTimeUtc"][1] + 3600)
     assert len(daily_forecast(data, next_day)) == 5
     assert daily_forecast(None, next_day) == []
+
+
+def test_fog_needs_no_sunshine() -> None:
+    """Saturated air in full sun is not reported as fog."""
+    noon = _utc("2026-07-01T11:00:00+00:00")
+    assert estimate_condition(_observation(humidity=98.0, solar=850.0), noon) == "sunny"
+    assert estimate_condition(_observation(humidity=98.0, solar=150.0), noon) == "fog"
+    night = _utc("2026-07-01T23:00:00+00:00")
+    assert estimate_condition(_observation(humidity=98.0), night) == "fog"
+
+
+def test_exceptional_wins_over_station_rain() -> None:
+    """Station rain does not hide storms reported by weather.com."""
+    noon = _utc("2026-07-01T11:00:00+00:00")
+    tornado = {"iconCode": 0, "dayOrNight": "D", "validTimeUtc": noon.timestamp()}
+    windy = {"iconCode": 24, "dayOrNight": "D", "validTimeUtc": noon.timestamp()}
+    wet = _observation(precip=12.0)
+
+    assert current_condition(wet, tornado, noon) == "exceptional"
+    assert current_condition(wet, windy, noon) == "pouring"

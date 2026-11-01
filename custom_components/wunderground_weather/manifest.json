@@ -1,7 +1,12 @@
 {
   "domain": "wunderground_weather",
   "name": "Wunderground Weather",
-  "codeowners": ["@DmitryBoiadji"],
+  "categories": [
+    "weather_alerts.forecasts"
+  ],
+  "codeowners": [
+    "@DmitryBoiadji"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/DmitryBoiadji/wunderground_weather",
   "integration_type": "device",

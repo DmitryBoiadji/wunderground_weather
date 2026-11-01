@@ -102,9 +102,11 @@ class WundergroundObservationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def is_stale(self) -> bool:
         """Return True if the station stopped reporting."""
         observed = self.observation_time
-        return observed is not None and (
-            dt_util.utcnow() - observed > STALE_OBSERVATION_AGE
-        )
+        if observed is None:
+            return False
+        # A long polling interval must not make fresh data look stale
+        max_age = max(STALE_OBSERVATION_AGE, 2 * (self.update_interval or timedelta()))
+        return dt_util.utcnow() - observed > max_age
 
     @property
     def location(self) -> tuple[float, float] | None:
