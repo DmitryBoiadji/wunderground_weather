@@ -8,9 +8,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 import aiohttp
-from bs4 import BeautifulSoup
-import json
 import logging
+import re
 import async_timeout
 from datetime import timedelta
 
@@ -21,6 +20,10 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Current page: inline script with `const data = {"API_KEY":"..."}`.
+# Legacy page: app-root-state JSON with "SUN_API_KEY".
+API_KEY_PATTERN = re.compile(r'"(?:SUN_)?API_KEY"\s*:\s*"([A-Za-z0-9]+)"')
 
 async def fetch_weather_data(session, station_id):
     """Fetch weather data asynchronously."""
@@ -35,23 +38,11 @@ async def fetch_weather_data(session, station_id):
             response.raise_for_status()
             html_content = await response.text()
 
-        soup = BeautifulSoup(html_content, "html.parser")
-        script_tag = soup.find("script", {"id": "app-root-state", "type": "application/json"})
-
-        if not script_tag or not script_tag.string.strip():
-            raise ValueError("Script tag content is empty or missing!")
-
-        script_content = script_tag.string.replace("&q;", "\"")
-
-        try:
-            json_data = json.loads(script_content)
-        except json.JSONDecodeError as e:
-            _LOGGER.error(f"Error decoding JSON: {e}")
-            raise ValueError("Failed to parse weather data from script tag!")
-
-        api_key = json_data.get("process.env", {}).get("SUN_API_KEY")
-        if not api_key:
-            raise ValueError("API key not found in data!")
+        # The legacy Angular page encoded quotes as &q; inside app-root-state
+        match = API_KEY_PATTERN.search(html_content.replace("&q;", '"'))
+        if not match:
+            raise ValueError("API key not found on the dashboard page, markup may have changed")
+        api_key = match.group(1)
 
         api_url = (
             f"https://api.weather.com/v2/pws/observations/current?"
