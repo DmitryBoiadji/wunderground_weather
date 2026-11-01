@@ -1,0 +1,33 @@
+{
+  "observations": [
+    {
+      "stationID": "ITEST123",
+      "obsTimeUtc": "2026-11-01T11:28:33Z",
+      "obsTimeLocal": "2026-11-01 03:28:33",
+      "neighborhood": "Test Town",
+      "softwareType": "TestStation 1.0",
+      "country": "US",
+      "solarRadiation": 412.5,
+      "lon": -122.411581,
+      "realtimeFrequency": null,
+      "epoch": 1793532513,
+      "lat": 37.775319,
+      "uv": 3.0,
+      "winddir": 176,
+      "humidity": 94.0,
+      "qcStatus": 1,
+      "metric": {
+        "temp": 11.6,
+        "heatIndex": 11.6,
+        "dewpt": 10.6,
+        "windChill": 11.6,
+        "windSpeed": 7.2,
+        "windGust": 11.5,
+        "pressure": 1013.61,
+        "precipRate": 0.0,
+        "precipTotal": 4.09,
+        "elev": 11.9
+      }
+    }
+  ]
+}
