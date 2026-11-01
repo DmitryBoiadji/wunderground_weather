@@ -304,3 +304,35 @@ async def test_key_not_in_debug_logs(
     error = setup_integration.runtime_data.observation.last_exception
     assert error is not None
     assert API_KEY not in "".join(traceback.format_exception(error))
+
+
+async def test_parallel_requests_with_unchanged_rejected_key(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """If the page keeps the rejected key, parallel requests load it only once."""
+    aioclient_mock.get(DASHBOARD_URL, text=load_fixture("dashboard.html"))
+    aioclient_mock.get(OBSERVATION_URL, json=load_json("observation.json"))
+    client = _client(hass)
+    await client.async_get_observation()
+
+    async def rejected(method, url, data):
+        await asyncio.sleep(0)
+        return AiohttpClientMockResponse(method, url, status=403)
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(DASHBOARD_URL, text=load_fixture("dashboard.html"))
+    for url in (CONDITIONS_URL, DAILY_URL, HOURLY_URL):
+        aioclient_mock.get(url, side_effect=rejected)
+
+    results = await asyncio.gather(
+        client.async_get_conditions(37.7, -122.4),
+        client.async_get_daily_forecast(37.7, -122.4),
+        client.async_get_hourly_forecast(37.7, -122.4),
+        return_exceptions=True,
+    )
+
+    assert all(isinstance(result, WundergroundApiKeyError) for result in results)
+    urls = [str(call[1]) for call in aioclient_mock.mock_calls]
+    assert len([url for url in urls if "dashboard" in url]) == 1
+    # No pointless retry with the same key
+    assert len([url for url in urls if "apiKey=" in url]) == 3

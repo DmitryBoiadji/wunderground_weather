@@ -182,6 +182,13 @@ class WundergroundClient:
             except WundergroundApiKeyError:
                 self._key_retry_after = time.monotonic() + KEY_RETRY_COOLDOWN
                 raise
+            if rejected_key is not None and self._api_key == rejected_key:
+                # Start the cooldown now, so that parallel requests waiting
+                # for the lock do not load the page again
+                self._key_retry_after = time.monotonic() + KEY_RETRY_COOLDOWN
+                raise WundergroundApiKeyError(
+                    "The dashboard page still has the API key that was rejected"
+                )
             return self._api_key
 
     async def _async_fetch_api_key(self) -> str:
